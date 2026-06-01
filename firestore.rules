@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Fallback
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSubmission(data) {
+      return data.keys().hasAll(['fullName', 'dob', 'gender', 'school', 'address', 'parentPhone', 'grades', 'totalScore', 'createdAt', 'updatedAt'])
+        && data.keys().size() >= 10
+        && data.fullName is string && data.fullName.size() <= 200
+        && data.dob is string && data.dob.size() <= 50
+        && data.gender is string && data.gender.size() <= 20
+        && data.school is string && data.school.size() <= 200
+        && data.address is string && data.address.size() <= 300
+        && data.parentPhone is string && data.parentPhone.size() <= 20
+        && data.grades is map && data.grades.keys().hasAll(['1', '2', '3', '4', '5'])
+        && data.grades['1'] is string && data.grades['1'].size() <= 20
+        && data.grades['2'] is string && data.grades['2'].size() <= 20
+        && data.grades['3'] is string && data.grades['3'].size() <= 20
+        && data.grades['4'] is string && data.grades['4'].size() <= 20
+        && data.grades['5'] is string && data.grades['5'].size() <= 20
+        && data.totalScore is number;
+    }
+
+    match /submissions/{submissionId} {
+      allow get: if isValidId(submissionId);
+      allow list: if true;
+      
+      allow create: if isValidId(submissionId)
+        && isSubmission(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isValidId(submissionId)
+        && isSubmission(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'dob', 'gender', 'school', 'address', 'parentPhone', 'grades', 'totalScore', 'updatedAt']);
+        
+      allow delete: if false;
+    }
+  }
+}

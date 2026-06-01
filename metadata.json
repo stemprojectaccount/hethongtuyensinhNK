@@ -1,0 +1,6 @@
+{
+  "name": "Hệ thống Tuyển sinh Học bạ",
+  "description": "Cổng thông tin nhập thành tích học tập và quy đổi điểm xét tuyển dành cho học sinh.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
