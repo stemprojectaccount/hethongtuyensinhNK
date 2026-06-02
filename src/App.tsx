@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Printer, ArrowLeft, GraduationCap, User, FileText, School, 
-  CheckCircle2, Loader2, ChevronRight, Edit2, Search, Download, Lock, Eye, RefreshCw, AlertTriangle
+  CheckCircle2, Loader2, ChevronRight, Edit2, Search, Download, Lock, Eye, RefreshCw, AlertTriangle, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './lib/firebase';
 import { signInAnonymously, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { collection, doc, setDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, doc, setDoc, serverTimestamp, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { OperationType, handleFirestoreError } from './lib/firebase-utils';
 import { cn } from './lib/utils';
 import * as XLSX from 'xlsx';
@@ -80,6 +80,11 @@ export default function App() {
   const [submissionsList, setSubmissionsList] = useState<any[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(false);
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
+
+  // Deletion States
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deletingName, setDeletingName] = useState<string>('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Get filtered student list shown in the dashboard table and matched with Excel/CSV export
   const filteredSubmissions = submissionsList.filter(sub => {
@@ -290,10 +295,40 @@ export default function App() {
     }
 
     setIsSaving(true);
-    const subId = crypto.randomUUID();
     try {
+      // 1. Kiểm tra trùng Số định danh/CCCD
+      const idCardToCheck = formData.idCard.trim();
+      const idCardQuery = query(
+        collection(db, 'submissions'),
+        where('idCard', '==', idCardToCheck)
+      );
+      const idCardSnapshot = await getDocs(idCardQuery);
+      if (!idCardSnapshot.empty) {
+        setFormValidationError(`Số căn cước công dân / định danh "${idCardToCheck}" đã được đăng ký xét tuyển trên hệ thống trước đó! Vui lòng kiểm tra lại.`);
+        setIsSaving(false);
+        return;
+      }
+
+      // 2. Kiểm tra trùng Họ tên và Ngày sinh (Chống trùng tên)
+      const fullNameUpper = formData.fullName.trim().toUpperCase();
+      const dobToCheck = formData.dob.trim();
+      const duplicateNameQuery = query(
+        collection(db, 'submissions'),
+        where('fullName', '==', fullNameUpper),
+        where('dob', '==', dobToCheck)
+      );
+      const nameSnapshot = await getDocs(duplicateNameQuery);
+      if (!nameSnapshot.empty) {
+        const readableDob = dobToCheck.split('-').reverse().join('/');
+        setFormValidationError(`Học sinh "${fullNameUpper}" sinh ngày ${readableDob} đã được đăng ký xét tuyển trên hệ thống! Vui lòng không gửi hồ sơ trùng lặp.`);
+        setIsSaving(false);
+        return;
+      }
+
+      const subId = crypto.randomUUID();
       const payload = {
         ...formData,
+        fullName: fullNameUpper,
         parentPhone: formData.fatherPhone || formData.motherPhone || '',
         totalScore,
         createdAt: serverTimestamp(),
@@ -331,7 +366,7 @@ export default function App() {
     try {
       const q = query(
         collection(db, 'submissions'),
-        where('fullName', '==', searchQuery.name),
+        where('fullName', '==', searchQuery.name.trim().toUpperCase()),
         where('dob', '==', searchQuery.dob)
       );
       
@@ -633,7 +668,7 @@ export default function App() {
                               <th className="py-3 px-4">Trường Tiểu Học</th>
                               <th className="py-3 px-4">SĐT Liên Hệ</th>
                               <th className="py-3 px-4 text-center">Tổng Điểm</th>
-                              <th className="py-3 px-4 text-center">Hồ Sơ</th>
+                              <th className="py-3 px-4 text-center">Hành Động</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100 text-sm">
@@ -680,16 +715,27 @@ export default function App() {
                                   </span>
                                 </td>
                                 <td className="py-4 px-4 text-center">
-                                  <button 
-                                    onClick={() => {
-                                      setFormData(sub);
-                                      setViewState('print');
-                                      setIsSubmitted(true);
-                                    }}
-                                    className="inline-flex items-center gap-1 px-3 py-1.5 border border-blue-100 rounded-lg text-blue-600 bg-blue-50/50 hover:bg-blue-50 transition font-medium text-xs cursor-pointer"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" /> Xem phiếu
-                                  </button>
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button 
+                                      onClick={() => {
+                                        setFormData(sub);
+                                        setViewState('print');
+                                        setIsSubmitted(true);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-3 py-1.5 border border-blue-100 rounded-lg text-blue-600 bg-blue-50/50 hover:bg-blue-50 transition font-medium text-xs cursor-pointer"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" /> Xem phiếu
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        setDeletingId(sub.id);
+                                        setDeletingName(sub.fullName);
+                                      }}
+                                      className="inline-flex items-center gap-1 px-3 py-1.5 border border-red-100 rounded-lg text-red-600 bg-red-50/50 hover:bg-red-50 transition font-medium text-xs cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" /> Xóa
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}
@@ -1069,6 +1115,75 @@ export default function App() {
         </AnimatePresence>
         </main>
       )}
+
+      {/* Deletion Confirmation Modal */}
+      <AnimatePresence>
+        {deletingId && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full border border-gray-100"
+            >
+              <div className="flex items-center gap-3 text-red-600 mb-4">
+                <div className="bg-red-50 p-2 rounded-full">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <h3 className="text-lg font-bold">Xác nhận xóa hồ sơ</h3>
+              </div>
+              
+              <p className="text-gray-600 text-sm mb-6">
+                Bạn có chắc chắn muốn xóa trực tiếp hồ sơ của học sinh <strong className="text-gray-900 uppercase font-bold">{deletingName}</strong> khỏi hệ thống? 
+                <span className="block mt-2 text-red-600 font-semibold">⚠️ Cảnh báo: Hành động này sẽ xóa vĩnh viễn dữ liệu và không thể khôi phục lại!</span>
+              </p>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeletingId(null);
+                    setDeletingName('');
+                  }}
+                  disabled={isDeleting}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition font-medium text-sm disabled:opacity-50 cursor-pointer bg-white"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!deletingId) return;
+                    setIsDeleting(true);
+                    try {
+                      await deleteDoc(doc(db, 'submissions', deletingId));
+                      await fetchSubmissions();
+                      setDeletingId(null);
+                      setDeletingName('');
+                    } catch (err) {
+                      console.error("Lỗi khi xóa hồ sơ:", err);
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition font-bold text-sm disabled:opacity-50 cursor-pointer flex items-center gap-1.5 border-none"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Đang xóa...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" /> Xác nhận xóa
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

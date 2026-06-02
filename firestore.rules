@@ -57,7 +57,7 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'dob', 'gender', 'school', 'address', 'parentPhone', 'grades', 'totalScore', 'updatedAt']);
         
-      allow delete: if false;
+      allow delete: if isValidId(submissionId);
     }
   }
 }
