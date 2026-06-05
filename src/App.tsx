@@ -1101,11 +1101,9 @@ export default function App() {
                 <div className="flex justify-between mt-16 pt-8 px-8 text-black">
                   <div className="text-center">
                     <p className="font-bold mb-16">Phụ huynh / Người giám hộ</p>
-                    <p className="italic text-gray-600">(Ký và ghi rõ họ tên)</p>
                   </div>
                   <div className="text-center">
                     <p className="font-bold mb-16">Người nhận hồ sơ</p>
-                    <p className="italic text-gray-600">(Ký và ghi rõ họ tên)</p>
                   </div>
                 </div>
               </div>
